@@ -3,6 +3,7 @@ from dataclasses import dataclass
 import re
 from typing import Dict, FrozenSet, Generator, Iterable, List, Set, Tuple, Union
 
+
 Estado = str
 Transicao = Tuple[Estado, str, Estado]
 MapaDeTransicao = Dict[Tuple[Estado, str], Set[Estado]]
@@ -10,7 +11,7 @@ MapaDeTransicao = Dict[Tuple[Estado, str], Set[Estado]]
 Epsilon = "&"
 
 
-def serializar_conjunto_de_estados(estados: Iterable[Estado]) -> str:
+def unir_estados(estados: Iterable[Estado]) -> str:
     # return "{" + "".join(sorted(estados)) + "}"
     return "".join(sorted(estados))
 
@@ -95,7 +96,7 @@ class AutomatoFinito:
         fecho = self.calcular_epsilon_fecho()
 
         conjunto_inicial = fecho[self.estado_inicial]
-        inicial = serializar_conjunto_de_estados(conjunto_inicial)
+        inicial = unir_estados(conjunto_inicial)
         transicoes: List[Transicao] = []
         finais: Set[Estado] = set()
 
@@ -104,7 +105,7 @@ class AutomatoFinito:
 
         while restantes:
             conjunto_origem = restantes.pop()
-            origem = serializar_conjunto_de_estados(conjunto_origem)
+            origem = unir_estados(conjunto_origem)
 
             if conjunto_origem in visitados:
                 continue
@@ -122,7 +123,7 @@ class AutomatoFinito:
                 if not conjunto_destino:
                     continue
 
-                destino = serializar_conjunto_de_estados(conjunto_destino)
+                destino = unir_estados(conjunto_destino)
 
                 transicao: Transicao = (origem, simbolo, destino)
                 transicoes.append(transicao)
@@ -134,6 +135,99 @@ class AutomatoFinito:
                 finais.add(origem)
         
         return AutomatoFinito(inicial, finais, self.alfabeto, transicoes)
+    
+    def pegar_estados_produtivos(self) -> FrozenSet[Estado]:
+        resultado: List[Estado] = []
+
+        for origem in self.estados:
+            alcancaveis = self.pegar_alcancaveis(origem)
+
+            if any(estado in self.estados_finais for estado in alcancaveis):
+                resultado.append(origem)
+        
+        return frozenset(resultado)
+
+    def descartar_estados_inuteis(self) -> "AutomatoFinito":
+        alcancaveis = self.pegar_alcancaveis(self.estado_inicial)
+        produtivos = self.pegar_estados_produtivos()
+
+        inalcancaveis = self.estados - alcancaveis
+        mortos = self.estados - produtivos
+
+        descartados = set([*inalcancaveis, *mortos])
+
+        transicoes: List[Transicao] = [
+            transicao for transicao in self.transicoes()
+            if transicao[0] not in descartados
+            and transicao[2] not in descartados
+        ]
+        finais = self.estados_finais - descartados
+
+        return AutomatoFinito(
+            self.estado_inicial, finais, self.alfabeto, transicoes
+        )
+
+    def calcular_estados_equivalentes(self) -> FrozenSet[FrozenSet[Estado]]:
+        classes = frozenset([
+            self.estados - self.estados_finais,
+            self.estados_finais
+        ])
+        visitados = set()
+
+        while True:
+            mapa_classes: Dict[Tuple, Set[Estado]] = {}
+
+            for estado in self.estados:
+                classes_destino: List[int] = []
+
+                for simbolo in self.alfabeto:
+                    destinos = self.transicao(estado, simbolo)
+
+                    if not destinos:
+                        classes_destino.append(-1)
+                        continue
+                    
+                    destino, *_ = destinos
+
+                    for i, classe in enumerate(classes):
+                        if destino not in classe:
+                            continue
+
+                        classes_destino.append(i)
+                        break
+                
+                final = estado in self.estados_finais
+                chave = (*classes_destino, final)
+
+                classe: Set[Estado] = mapa_classes.setdefault(chave, set())
+                classe.add(estado)
+            
+            classes = frozenset(frozenset(classe) for classe in mapa_classes.values())
+
+            if classes in visitados:
+                return classes
+            visitados.add(classes)
+    
+    def minimizar(self) -> "AutomatoFinito":
+        automato = self.determinizar()
+        automato = automato.descartar_estados_inuteis()
+
+        estados_equivalentes = automato.calcular_estados_equivalentes()
+        estados_unidos = [sorted(classe)[0] for classe in estados_equivalentes]
+
+        mapa: Dict[Estado, Estado] = {}
+        for estado_unido, classe in zip(estados_unidos, estados_equivalentes):
+            for estado in classe:
+                mapa[estado] = estado_unido
+        
+        transicoes: List[Transicao] = [
+            [mapa[origem], simbolo, mapa[destino]]
+            for origem, simbolo, destino in automato.transicoes()
+        ]
+        inicial = mapa[automato.estado_inicial]
+        finais = set(mapa[estado] for estado in automato.estados_finais)
+
+        return AutomatoFinito(inicial, finais, automato.alfabeto, transicoes)
 
     def serializar(self) -> str:
         num_estados = len(self.estados)
