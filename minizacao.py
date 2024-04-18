@@ -10,7 +10,7 @@ def main():
     afd = afnd.minimizar()
     codificacao_resultado = afd.serializar()
 
-    print({codificacao_resultado})
+    print(codificacao_resultado)
 
 
 if __name__ == "__main__":
