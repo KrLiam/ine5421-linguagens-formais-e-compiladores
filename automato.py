@@ -234,7 +234,15 @@ class AutomatoFinito:
         inicial = self.estado_inicial
         finais = "{" + ",".join(sorted(self.estados_finais)) + "}"
         alfabeto = "{" + ",".join(sorted(self.alfabeto)) + "}"
-        transicoes = ";".join(",".join(transicao) for transicao in sorted(self.transicoes()))
+
+        t = self.transicoes()
+        t = sorted(t, key=lambda v: v[2])      # por destino
+        t = sorted(t, key=lambda v: v[1])      # por símbolo de transição
+        t = sorted(t, key=lambda v: v[0])      # por origem
+        t = sorted(t, key=lambda v: len(v[0])) # por comprimento da origem
+
+        transicoes = ";".join(",".join(transicao) for transicao in t)
+
 
         return f"{num_estados};{inicial};{finais};{alfabeto};{transicoes}"
 
