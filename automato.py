@@ -12,6 +12,8 @@ Epsilon = "&"
 
 
 def unir_estados(estados: Iterable[Estado]) -> str:
+    """Retorna a representação em string de um conjunto de estados."""
+    
     # return "{" + "".join(sorted(estados)) + "}"
     return "".join(sorted(estados))
 
@@ -38,6 +40,8 @@ class AutomatoFinito:
 
     @classmethod
     def pegar_estados(cls, transicoes: Iterable[Transicao]) -> FrozenSet[Estado]:
+        """Pega os estados utilizados em um conjunto de transições."""
+
         estados = set()
 
         for origem, _, destino in transicoes:
@@ -48,6 +52,11 @@ class AutomatoFinito:
     
     @classmethod
     def criar_mapa_de_transicao(cls, transicoes: Iterable[Transicao]) -> MapaDeTransicao:
+        """
+        Cria um dicionário que mapeia um par de estado e
+        símbolo de leitura para um estado de destino.
+        """
+
         mapa: MapaDeTransicao = {}
 
         for origem, simbolo, destino in transicoes:
@@ -59,15 +68,25 @@ class AutomatoFinito:
         return mapa
 
     def transicao(self, origem: Estado, simbolo: str) -> FrozenSet[Estado]:
+        """Retorna o estado de destino dado um estado de origem e um símbolo de leitura."""
+
         chave = (origem, simbolo)
         return frozenset(self.mapa_transicoes.get(chave, set()))
 
     def transicoes(self) -> Generator[Transicao, None, None]:
+        """Retorna um gerador que percorre as transições do autômato."""
+
         for (origem, simbolo), destinos in self.mapa_transicoes.items():
             for d in destinos:
                 yield (origem, simbolo, d)
     
     def pegar_alcancaveis(self, estado: Estado, simbolo: Union[str, None] = None) -> FrozenSet[Estado]:
+        """
+        Realiza uma busca em largura a partir de um estado considerando apenas
+        transições que leem o símbolo especificado, retornando os estados alcançados.
+        Se nenhum símbolo é especificado, considera todas as transições disponívies.
+        """
+
         alcancados: Set[Estado] = set([estado])
         restantes: Set[Estado] = set([estado])
 
@@ -85,6 +104,10 @@ class AutomatoFinito:
         return frozenset(alcancados)
 
     def calcular_epsilon_fecho(self):
+        """
+        Calcula os estados alcançados por epsilon para todos os estados do autômato.
+        """
+
         resultado: Dict[Estado, FrozenSet[Estado]] = {}
 
         for estado in self.estados:
@@ -93,6 +116,8 @@ class AutomatoFinito:
         return resultado
 
     def determinizar(self) -> "AutomatoFinito":
+        """Retorna o autômato finito determinístico equivalente."""
+
         fecho = self.calcular_epsilon_fecho()
 
         conjunto_inicial = fecho[self.estado_inicial]
@@ -137,6 +162,8 @@ class AutomatoFinito:
         return AutomatoFinito(inicial, finais, self.alfabeto, transicoes)
     
     def pegar_estados_produtivos(self) -> FrozenSet[Estado]:
+        """Retorna o conjunto de estados que alcançam pelo menos um estado de aceitação."""
+
         resultado: List[Estado] = []
 
         for origem in self.estados:
@@ -148,6 +175,11 @@ class AutomatoFinito:
         return frozenset(resultado)
 
     def descartar_estados_inuteis(self) -> "AutomatoFinito":
+        """
+        Retorna o autômato finito equivalente que não possui
+        estados inalcançáveis ou mortos.
+        """
+
         alcancaveis = self.pegar_alcancaveis(self.estado_inicial)
         produtivos = self.pegar_estados_produtivos()
 
@@ -168,6 +200,8 @@ class AutomatoFinito:
         )
 
     def calcular_estados_equivalentes(self) -> FrozenSet[FrozenSet[Estado]]:
+        """Calcula o conjunto de classes de equivalência do autômato."""
+
         classes = frozenset([
             self.estados - self.estados_finais,
             self.estados_finais
@@ -209,6 +243,8 @@ class AutomatoFinito:
             visitados.add(classes)
     
     def minimizar(self) -> "AutomatoFinito":
+        """Retorna o autômato finito determinístico equivalente mínimo."""
+
         automato = self.determinizar()
         automato = automato.descartar_estados_inuteis()
 
@@ -230,6 +266,8 @@ class AutomatoFinito:
         return AutomatoFinito(inicial, finais, automato.alfabeto, transicoes)
 
     def serializar(self) -> str:
+        """Retorna a representação em string do autômato."""
+
         num_estados = len(self.estados)
         inicial = self.estado_inicial
         finais = "{" + ",".join(sorted(self.estados_finais)) + "}"
@@ -247,11 +285,15 @@ class AutomatoFinito:
         return f"{num_estados};{inicial};{finais};{alfabeto};{transicoes}"
 
 
-def parse(entrada: str):
+def parse(entrada: str) -> AutomatoFinito:
     """
-        <número de estados>;<estado inicial>;{<estados finais>};{<alfabeto>};<transições>
+    Retorna o autômato finito descrito pela entrada fornecida.
 
-        <estado origem>,<simbolo do alfabeto>,<estado destino>
+    Formato da entrada:
+    <número de estados>;<estado inicial>;{<estados finais>};{<alfabeto>};<transições>
+
+    Formato da transição:
+    <estado origem>,<simbolo do alfabeto>,<estado destino>
     """
 
     # remove todos os espaços em branco
