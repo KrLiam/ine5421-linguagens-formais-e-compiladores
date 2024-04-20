@@ -13,9 +13,8 @@ Epsilon = "&"
 
 def unir_estados(estados: Iterable[Estado]) -> str:
     """Retorna a representação em string de um conjunto de estados."""
-    
-    # return "{" + "".join(sorted(estados)) + "}"
-    return "".join(sorted(estados))
+
+    return "{" + "".join(sorted(estados)) + "}"
 
 @dataclass(init=False)
 class AutomatoFinito:
@@ -273,12 +272,7 @@ class AutomatoFinito:
         finais = "{" + ",".join(sorted(self.estados_finais)) + "}"
         alfabeto = "{" + ",".join(sorted(self.alfabeto)) + "}"
 
-        t = self.transicoes()
-        t = sorted(t, key=lambda v: v[2])      # por destino
-        t = sorted(t, key=lambda v: v[1])      # por símbolo de transição
-        t = sorted(t, key=lambda v: v[0])      # por origem
-        t = sorted(t, key=lambda v: len(v[0])) # por comprimento da origem
-
+        t = sorted(self.transicoes())
         transicoes = ";".join(",".join(transicao) for transicao in t)
 
 
