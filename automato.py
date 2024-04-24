@@ -201,6 +201,7 @@ class AutomatoFinito:
     def calcular_estados_equivalentes(self) -> FrozenSet[FrozenSet[Estado]]:
         """Calcula o conjunto de classes de equivalência do autômato."""
 
+        # partição inicial de estados não-finais e finais
         classes = frozenset([
             self.estados - self.estados_finais,
             self.estados_finais
@@ -211,27 +212,31 @@ class AutomatoFinito:
             mapa_classes: Dict[Tuple, Set[Estado]] = {}
 
             for estado in self.estados:
+                # lista de índices das classes que este estado vai
+                # para cada símbolo do alfabeto.
                 classes_destino: List[int] = []
 
                 for simbolo in self.alfabeto:
                     destinos = self.transicao(estado, simbolo)
 
+                    # -1 se o estado não possui transição por este símbolo
                     if not destinos:
                         classes_destino.append(-1)
                         continue
                     
                     destino, *_ = destinos
 
+                    # procura a classe que possui este estado
                     for i, classe in enumerate(classes):
                         if destino not in classe:
                             continue
-
                         classes_destino.append(i)
                         break
                 
                 final = estado in self.estados_finais
                 chave = (*classes_destino, final)
 
+                # adiciona este estado a sua classe equivalente
                 classe: Set[Estado] = mapa_classes.setdefault(chave, set())
                 classe.add(estado)
             
@@ -244,17 +249,23 @@ class AutomatoFinito:
     def minimizar(self) -> "AutomatoFinito":
         """Retorna o autômato finito determinístico equivalente mínimo."""
 
-        automato = self.determinizar()
-        automato = automato.descartar_estados_inuteis()
+        # descarta estados mortos e inalcançáveis
+        automato = self.descartar_estados_inuteis()
 
+        # calcula as classes de equivalencia
         estados_equivalentes = automato.calcular_estados_equivalentes()
+        # une os estados equivalentes, considerando apenas o nome do
+        # primeiro estado em ordem lexicográfica crescente
         estados_unidos = [sorted(classe)[0] for classe in estados_equivalentes]
 
+        # cria um dicionário que mapeia os estados pelos
+        # estados equivalentes as classes de equivalência
         mapa: Dict[Estado, Estado] = {}
         for estado_unido, classe in zip(estados_unidos, estados_equivalentes):
             for estado in classe:
                 mapa[estado] = estado_unido
         
+        # calcula as novas transições, estado inicial e estados finais
         transicoes: List[Transicao] = [
             [mapa[origem], simbolo, mapa[destino]]
             for origem, simbolo, destino in automato.transicoes()
@@ -272,9 +283,11 @@ class AutomatoFinito:
         finais = "{" + ",".join(sorted(self.estados_finais)) + "}"
         alfabeto = "{" + ",".join(sorted(self.alfabeto)) + "}"
 
-        t = sorted(self.transicoes())
-        transicoes = ";".join(",".join(transicao) for transicao in t)
+        t = self.transicoes()
+        t = sorted(t, key=lambda v: v[1])
+        t = sorted(t, key=lambda v: v[0][1:-1] if v[0].startswith("{") else v[0])
 
+        transicoes = ";".join(",".join(transicao) for transicao in t)
 
         return f"{num_estados};{inicial};{finais};{alfabeto};{transicoes}"
 
