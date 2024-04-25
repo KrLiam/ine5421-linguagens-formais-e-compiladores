@@ -31,6 +31,8 @@ class AutomatoFinito:
         alfabeto: Iterable[str],
         transicoes: Iterable[Transicao],
     ):
+        transicoes = tuple(transicoes)
+
         self.estados = self.pegar_estados(transicoes)
         self.estado_inicial = estado_inicial
         self.estados_finais = frozenset(estados_finais)
