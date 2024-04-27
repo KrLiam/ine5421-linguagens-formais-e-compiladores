@@ -7,9 +7,9 @@ from automato import AutomatoFinito
 
 @dataclass(frozen=True)
 class RegexNode:
-    nullable: bool = field(default=None, repr=False)
-    firstpos: FrozenSet[int] = field(default_factory=frozenset, repr=False)
-    lastpos: FrozenSet[int] = field(default_factory=frozenset, repr=False)
+    nullable: bool = field(default=None, repr=True)
+    firstpos: FrozenSet[int] = field(default_factory=frozenset, repr=True)
+    lastpos: FrozenSet[int] = field(default_factory=frozenset, repr=True)
 
 @dataclass(frozen=True)
 class LeafNode(RegexNode):
@@ -211,7 +211,7 @@ def visit_cat( node: CatNode, acc: AnnotationAccumulator):
         right=right,
         nullable=left.nullable and right.nullable,
         firstpos=left.firstpos | right.firstpos if left.nullable else left.firstpos,
-        lastpos=left.firstpos | right.firstpos if right.nullable else right.firstpos,
+        lastpos=left.lastpos | right.lastpos if right.nullable else right.lastpos,
     )
 
 
