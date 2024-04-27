@@ -27,30 +27,6 @@ class StarNode(RegexNode):
 class LeafNode(RegexNode):
     value: str
 
-
-# 
-# (a | b)*abb
-regex = CatNode(
-    left=CatNode(
-        left=CatNode(
-            left=StarNode(
-                child=OrNode(
-                    left=LeafNode(value="a"),
-                    right=LeafNode(value="b"),
-                )
-            ),
-            right=LeafNode(value="a")
-        ),
-        right=LeafNode(value="b")
-    ),
-    right=LeafNode(value="b")
-)
-regex2 = CatNode(
-    left=OrNode(left=LeafNode(value="b"),right=LeafNode(value="")),
-    right=OrNode(left=LeafNode(value="a"),right=LeafNode(value=""))
-)
-
-
 @dataclass
 class Reader:
     value: str
@@ -81,13 +57,19 @@ class Reader:
 
         return self.value[self.pos]
 
-"""
-alternative -> sequence '|' regex | sequence
-sequence -> term*
-term -> factor '*'?
-factor -> char | '(' alternative ')'
-"""
+
 def parse_regex(value: str):
+    """
+    
+    Gramática:
+    ```
+    alternative -> sequence | sequence '|' alternative
+    sequence -> term*
+    term -> factor '*'*
+    factor -> char | '(' alternative ')'
+    ```
+    """
+
     return parse_alternative(Reader(value))
 
 def parse_alternative(reader: Reader):
@@ -95,12 +77,11 @@ def parse_alternative(reader: Reader):
 
     while reader.peek() == "|":
         reader.advance()
-        
+
         right = parse_sequence(reader)
         node = OrNode(left=node, right=right)
 
     return node
-
 
 def parse_sequence(reader: Reader):
     terms: list[RegexNode] = []
@@ -139,6 +120,7 @@ def parse_factor(reader: Reader):
     
     value = reader.read()
     return LeafNode(value=value if value is not None else "")
+
 
 @dataclass
 class AnnotationAccumulator:
