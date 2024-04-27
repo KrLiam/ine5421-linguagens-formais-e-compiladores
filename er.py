@@ -1,13 +1,13 @@
-from dataclasses import dataclass, replace
+from dataclasses import dataclass, field, replace
 
 from automato import AutomatoFinito
 
 
 @dataclass(frozen=True, kw_only=True)
 class RegexNode:
-    nullable: bool = False
-    firstpos: frozenset[int] = frozenset()
-    lastpos: frozenset[int] = frozenset()
+    nullable: bool = field(default=None, repr=False)
+    firstpos: frozenset[int] = field(default_factory=frozenset, repr=False)
+    lastpos: frozenset[int] = field(default_factory=frozenset, repr=False)
 
 @dataclass(frozen=True, kw_only=True)
 class CatNode(RegexNode):
@@ -28,6 +28,7 @@ class LeafNode(RegexNode):
     value: str
 
 
+# 
 # (a | b)*abb
 regex = CatNode(
     left=CatNode(
@@ -50,104 +51,177 @@ regex2 = CatNode(
 )
 
 
-class TreeAnnotator:
-    pos: int
+@dataclass
+class Reader:
+    value: str
+    pos: str = 0
 
-    def __init__(self):
-        self.pos = 0
-
-    def annotate(self, node: RegexNode):
-        self.pos = 0
-        return self.visit(node)
+    @property
+    def end(self):
+        return self.pos >= len(self.value)
     
-    def visit(self, node: RegexNode) -> RegexNode:
-        if isinstance(node, LeafNode):
-            return self.visit_leaf(node)
+    def advance(self):
+        if self.end:
+            return
         
-        if isinstance(node, StarNode):
-            return self.visit_star(node)
-
-        if isinstance(node, OrNode):
-            return self.visit_or(node)
-
-        if isinstance(node, CatNode):
-            return self.visit_cat(node)
-
-    def visit_leaf(self, node: LeafNode):
-        if not node.value:
-            return replace(
-                node, nullable=True, firstpos=frozenset(), lastpos=frozenset()
-            )
-
         self.pos += 1
-        pos = frozenset([self.pos])
 
-        return replace(node, nullable=False, firstpos=pos, lastpos=pos)
-
-    def visit_star(self, node: StarNode):
-        child = self.visit(node.child)
-
-        return replace(
-            node,
-            child=child,
-            nullable=True,
-            firstpos=child.firstpos,
-            lastpos=child.lastpos
-        )
-
-    def visit_or(self, node: OrNode):
-        left = self.visit(node.left)
-        right = self.visit(node.right)
-
-        return replace(
-            node,
-            left=left,
-            right=right,
-            nullable=left.nullable or right.nullable,
-            firstpos=left.firstpos | right.firstpos,
-            lastpos=left.lastpos | right.lastpos,
-        )
-
-    def visit_cat(self, node: CatNode):
-        left = self.visit(node.left)
-        right = self.visit(node.right)
-
-        return replace(
-            node,
-            left=left,
-            right=right,
-            nullable=left.nullable and right.nullable,
-            firstpos=left.firstpos | right.firstpos if left.nullable else left.firstpos,
-            lastpos=left.firstpos | right.firstpos if right.nullable else right.firstpos,
-        )
-
-
-def calculate_followpos(
-    node: RegexNode,
-    *,
-    acc: dict[int, set[int]] | None = None
-) -> dict[int, set[int]]:
-    if acc is None:
-        acc = {}
+    def read(self) -> str | None:
+        if self.end:
+            return None
     
-    if isinstance(node, CatNode):
-        calculate_followpos(node.left, acc=acc)
-        calculate_followpos(node.right, acc=acc)
+        ch = self.value[self.pos]
+        self.advance()
+
+        return ch
+
+    def peek(self) -> str | None:
+        if self.end:
+            return None
+
+        return self.value[self.pos]
+
+"""
+alternative -> sequence '|' regex | sequence
+sequence -> term*
+term -> factor '*'?
+factor -> char | '(' alternative ')'
+"""
+def parse_regex(value: str):
+    return parse_alternative(Reader(value))
+
+def parse_alternative(reader: Reader):
+    node = parse_sequence(reader)
+
+    while reader.peek() == "|":
+        reader.advance()
         
-        for i in node.left.lastpos:
-            positions = acc.setdefault(i, set())
-            positions.update(node.right.firstpos)
-    elif isinstance(node, StarNode):
-        calculate_followpos(node.child, acc=acc)
+        right = parse_sequence(reader)
+        node = OrNode(left=node, right=right)
 
-        for i in node.lastpos:
-            positions = acc.setdefault(i, set())
-            positions.update(node.firstpos)
-    elif isinstance(node, OrNode):
-        calculate_followpos(node.left, acc=acc)
-        calculate_followpos(node.right, acc=acc)
+    return node
+
+
+def parse_sequence(reader: Reader):
+    terms: list[RegexNode] = []
+
+    while not reader.end and reader.peek() not in (")", "|"):
+        terms.append(parse_term(reader))
     
-    return acc
+    if not terms:
+        return LeafNode(value="")
+    
+    if len(terms) == 1:
+        return terms[0]
+    
+    node, *terms = terms
+    for other in terms:
+        node = CatNode(left=node, right=other)
+    
+    return node
+
+def parse_term(reader: Reader):
+    node = parse_factor(reader)
+
+    while reader.peek() == "*":
+        reader.advance()
+        node = StarNode(child=node)
+    
+    return node
+
+def parse_factor(reader: Reader):
+    if reader.peek() == "(":
+        reader.advance()
+        value = parse_alternative(reader)
+        reader.advance()
+
+        return value
+    
+    value = reader.read()
+    return LeafNode(value=value if value is not None else "")
+
+@dataclass
+class AnnotationAccumulator:
+    pos: int = 0
+    followpos: dict[int, set[int]] = field(default_factory=dict)
+
+def annotate_tree(root: RegexNode) -> tuple[RegexNode, dict[int, set[int]]]:
+    acc = AnnotationAccumulator()
+    annotated_tree = visit_node(root, acc)
+
+    return annotated_tree, acc.followpos
+
+def visit_node(node: RegexNode, acc: AnnotationAccumulator) -> RegexNode:
+    if isinstance(node, LeafNode):
+        return visit_leaf(node, acc)
+    
+    if isinstance(node, StarNode):
+        return visit_star(node, acc)
+
+    if isinstance(node, OrNode):
+        return visit_or(node, acc)
+
+    if isinstance(node, CatNode):
+        return visit_cat(node, acc)
+
+def visit_leaf(node: LeafNode, acc: AnnotationAccumulator):
+    if not node.value:
+        return replace(
+            node, nullable=True, firstpos=frozenset(), lastpos=frozenset()
+        )
+
+    acc.pos += 1
+    pos = frozenset([acc.pos])
+
+    return replace(node, nullable=False, firstpos=pos, lastpos=pos)
+
+def visit_star(node: StarNode, acc: AnnotationAccumulator):
+    child = visit_node(node.child, acc)
+
+    firstpos = child.firstpos
+    lastpos = child.lastpos
+
+    for i in lastpos:
+        positions = acc.followpos.setdefault(i, set())
+        positions.update(firstpos)
+
+    return replace(
+        node,
+        child=child,
+        nullable=True,
+        firstpos=firstpos,
+        lastpos=lastpos
+    )
+
+def visit_or(node: OrNode, acc: AnnotationAccumulator):
+    left = visit_node(node.left, acc)
+    right = visit_node(node.right, acc)
+
+    return replace(
+        node,
+        left=left,
+        right=right,
+        nullable=left.nullable or right.nullable,
+        firstpos=left.firstpos | right.firstpos,
+        lastpos=left.lastpos | right.lastpos,
+    )
+
+def visit_cat( node: CatNode, acc: AnnotationAccumulator):
+    left = visit_node(node.left, acc)
+    right = visit_node(node.right, acc)
+
+    for i in left.lastpos:
+        positions = acc.followpos.setdefault(i, set())
+        positions.update(right.firstpos)
+
+    return replace(
+        node,
+        left=left,
+        right=right,
+        nullable=left.nullable and right.nullable,
+        firstpos=left.firstpos | right.firstpos if left.nullable else left.firstpos,
+        lastpos=left.firstpos | right.firstpos if right.nullable else right.firstpos,
+    )
 
 
 def get_leafs(node: RegexNode) -> tuple[LeafNode, ...]:
@@ -214,12 +288,10 @@ def generate_automaton(
     )
 
 
-def convert_regex(node: RegexNode):
+def convert_regex(value: str | RegexNode):
+    node = parse_regex(value) if isinstance(value, str) else value
     node = CatNode(left=node, right=LeafNode(value="#"))
 
-    annotator = TreeAnnotator()
-    annotated_tree = annotator.annotate(node)
-
-    followpos = calculate_followpos(annotated_tree)
+    annotated_tree, followpos = annotate_tree(node)
 
     return generate_automaton(annotated_tree, followpos)

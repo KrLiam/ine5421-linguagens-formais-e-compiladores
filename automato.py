@@ -32,10 +32,11 @@ class AutomatoFinito:
         transicoes: Iterable[Transicao],
     ):
         transicoes = tuple(transicoes)
+        estados_finais = frozenset(estados_finais)
 
-        self.estados = self.pegar_estados(transicoes)
+        self.estados = frozenset([*self.pegar_estados(transicoes), estado_inicial, *estados_finais])
         self.estado_inicial = estado_inicial
-        self.estados_finais = frozenset(estados_finais)
+        self.estados_finais = estados_finais
         self.alfabeto = frozenset(alfabeto) - {Epsilon,}
         self.mapa_transicoes = self.criar_mapa_de_transicao(transicoes)
 
@@ -292,6 +293,23 @@ class AutomatoFinito:
         transicoes = ";".join(",".join(transicao) for transicao in t)
 
         return f"{num_estados};{inicial};{finais};{alfabeto};{transicoes}"
+    
+    @property
+    def codigo_fonte(self):
+        msg = ""
+        indent = "    "
+
+        msg += "finite FA {\n"
+
+        msg += indent + f"initial {self.estado_inicial}\n"
+        msg += indent + "final " + ", ".join(self.estados_finais) + "\n"
+
+        for origem, simbolo, destino in self.transicoes():
+            msg += indent + f"{origem} {simbolo} -> {destino}\n"
+        
+        msg += "}"
+
+        return msg
 
 
 def parse(entrada: str) -> AutomatoFinito:
