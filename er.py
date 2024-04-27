@@ -1,31 +1,36 @@
 from dataclasses import dataclass, field, replace
-
+from typing import FrozenSet, Set, Dict, List, Tuple, Union
 from automato import AutomatoFinito
 
 
-@dataclass(frozen=True, kw_only=True)
+
+
+@dataclass(frozen=True)
 class RegexNode:
     nullable: bool = field(default=None, repr=False)
-    firstpos: frozenset[int] = field(default_factory=frozenset, repr=False)
-    lastpos: frozenset[int] = field(default_factory=frozenset, repr=False)
+    firstpos: FrozenSet[int] = field(default_factory=frozenset, repr=False)
+    lastpos: FrozenSet[int] = field(default_factory=frozenset, repr=False)
 
-@dataclass(frozen=True, kw_only=True)
-class CatNode(RegexNode):
-    left: RegexNode
-    right: RegexNode
-
-@dataclass(frozen=True, kw_only=True)
-class OrNode(RegexNode):
-    left: RegexNode
-    right: RegexNode
-
-@dataclass(frozen=True, kw_only=True)
-class StarNode(RegexNode):
-    child: RegexNode
-
-@dataclass(frozen=True, kw_only=True)
+@dataclass(frozen=True)
 class LeafNode(RegexNode):
-    value: str
+    value: str = ""
+
+EMPTY = LeafNode(value="")
+
+@dataclass(frozen=True)
+class CatNode(RegexNode):
+    left: RegexNode = EMPTY
+    right: RegexNode = EMPTY
+
+@dataclass(frozen=True)
+class OrNode(RegexNode):
+    left: RegexNode = EMPTY
+    right: RegexNode = EMPTY
+
+@dataclass(frozen=True)
+class StarNode(RegexNode):
+    child: RegexNode = EMPTY
+
 
 @dataclass
 class Reader:
@@ -42,7 +47,7 @@ class Reader:
         
         self.pos += 1
 
-    def read(self) -> str | None:
+    def read(self) -> Union[str, None]:
         if self.end:
             return None
     
@@ -51,7 +56,7 @@ class Reader:
 
         return ch
 
-    def peek(self) -> str | None:
+    def peek(self) -> Union[str, None]:
         if self.end:
             return None
 
@@ -84,7 +89,7 @@ def parse_alternative(reader: Reader):
     return node
 
 def parse_sequence(reader: Reader):
-    terms: list[RegexNode] = []
+    terms: List[RegexNode] = []
 
     while not reader.end and reader.peek() not in (")", "|"):
         terms.append(parse_term(reader))
@@ -119,15 +124,19 @@ def parse_factor(reader: Reader):
         return value
     
     value = reader.read()
+
+    if value == "&":
+        return LeafNode(value="")
+
     return LeafNode(value=value if value is not None else "")
 
 
 @dataclass
 class AnnotationAccumulator:
     pos: int = 0
-    followpos: dict[int, set[int]] = field(default_factory=dict)
+    followpos: Dict[int, Set[int]] = field(default_factory=dict)
 
-def annotate_tree(root: RegexNode) -> tuple[RegexNode, dict[int, set[int]]]:
+def annotate_tree(root: RegexNode) -> Tuple[RegexNode, Dict[int, Set[int]]]:
     acc = AnnotationAccumulator()
     annotated_tree = visit_node(root, acc)
 
@@ -206,7 +215,7 @@ def visit_cat( node: CatNode, acc: AnnotationAccumulator):
     )
 
 
-def get_leafs(node: RegexNode) -> tuple[LeafNode, ...]:
+def get_leafs(node: RegexNode) -> Tuple[LeafNode, ...]:
     if isinstance(node, LeafNode):
         return (node,) if node.value else ()
 
@@ -219,7 +228,7 @@ def get_leafs(node: RegexNode) -> tuple[LeafNode, ...]:
     return ()
 
 def generate_automaton(
-    annotated_tree: RegexNode, followpos: dict[int, set[int]]
+    annotated_tree: RegexNode, followpos: Dict[int, Set[int]]
 ) -> AutomatoFinito:
     leafs = get_leafs(annotated_tree)
     symbol_map = {
@@ -237,7 +246,7 @@ def generate_automaton(
     while remaining:
         state = remaining.pop()
 
-        destinations: dict[str, frozenset[int]] = {}
+        destinations: Dict[str, FrozenSet[int]] = {}
         for i in state:
             symbol = symbol_map[i]
             dest = destinations.get(symbol, frozenset()) | followpos.get(i, frozenset())
@@ -259,7 +268,7 @@ def generate_automaton(
     alphabet = set(symbol for _, symbol, _ in transitions)
 
     format = {
-        state: f"q{i}" for i, state in enumerate(states)
+        state: "{" + ",".join(str(n) for n in sorted(state)) + "}" for state in states
     }
 
     return AutomatoFinito(
@@ -270,7 +279,7 @@ def generate_automaton(
     )
 
 
-def convert_regex(value: str | RegexNode):
+def convert_regex(value: Union[str, RegexNode]):
     node = parse_regex(value) if isinstance(value, str) else value
     node = CatNode(left=node, right=LeafNode(value="#"))
 
