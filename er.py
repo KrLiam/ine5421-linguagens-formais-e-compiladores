@@ -1,8 +1,5 @@
 from dataclasses import dataclass, field, replace
-from typing import FrozenSet, Set, Dict, List, Tuple, Union
-from automato import AutomatoFinito
-
-
+from typing import Any, FrozenSet, Set, Dict, List, Tuple, Union
 
 
 @dataclass(frozen=True)
@@ -48,10 +45,7 @@ class Reader:
         self.pos += 1
 
     def read(self) -> Union[str, None]:
-        if self.end:
-            return None
-    
-        ch = self.value[self.pos]
+        ch = self.peek()
         self.advance()
 
         return ch
@@ -60,7 +54,13 @@ class Reader:
         if self.end:
             return None
 
-        return self.value[self.pos]
+        ch = self.value[self.pos]
+
+        if ch in ("\n", " "):
+            self.advance()
+            return self.peek()
+        
+        return ch
 
 
 def parse_regex(value: str):
@@ -229,7 +229,7 @@ def get_leafs(node: RegexNode) -> Tuple[LeafNode, ...]:
 
 def generate_automaton(
     annotated_tree: RegexNode, followpos: Dict[int, Set[int]]
-) -> AutomatoFinito:
+):
     leafs = get_leafs(annotated_tree)
     symbol_map = {
         i: node.value
@@ -240,14 +240,14 @@ def generate_automaton(
     initial = annotated_tree.firstpos
     transitions = []
 
-    states = {initial}
-    remaining = {initial}
+    states = [initial]
+    remaining = [initial]
 
     while remaining:
-        state = remaining.pop()
+        state = remaining.pop(0)
 
         destinations: Dict[str, FrozenSet[int]] = {}
-        for i in state:
+        for i in sorted(state, key=lambda s: symbol_map[s]):
             symbol = symbol_map[i]
             dest = destinations.get(symbol, frozenset()) | followpos.get(i, frozenset())
 
@@ -259,11 +259,11 @@ def generate_automaton(
             (state, symbol, dest) for symbol, dest in destinations.items()
         ]
         transitions.extend(state_transitions)
-        remaining.update(s for s in destinations.values() if s not in states)
-        states.update(destinations.values())
+        remaining.extend(s for s in destinations.values() if s not in states)
+        states.extend(s for s in destinations.values() if s not in states)
     
     final_i, *_ = leafs[-1].lastpos
-    finals = {state for state in states if final_i in state}
+    finals = [state for state in states if final_i in state]
 
     alphabet = set(symbol for _, symbol, _ in transitions)
 
@@ -271,12 +271,23 @@ def generate_automaton(
         state: "{" + ",".join(str(n) for n in sorted(state)) + "}" for state in states
     }
 
-    return AutomatoFinito(
-        format[initial],
-        (format[s] for s in finals),
+    return (
+        [format[s] for s in states],
         alphabet,
-        ((format[origin], symbol, format[dest]) for origin, symbol, dest in transitions)
+        format[initial],
+        [format[s] for s in finals],
+        [(format[origin], symbol, format[dest]) for origin, symbol, dest in transitions]
     )
+
+def serialize(dfa_tuple: Any):
+    states, alphabet, initial, finals, transitions = dfa_tuple
+
+    num_states = len(states)
+    finals_str = "{" + ",".join(finals) + "}"
+    alfabeto = "{" + ",".join(sorted(alphabet)) + "}"
+    transitions_str = ";".join(",".join(t) for t in transitions)
+
+    return f"{num_states};{initial};{finals_str};{alfabeto};{transitions_str}"
 
 
 def convert_regex(value: Union[str, RegexNode]):
@@ -285,4 +296,12 @@ def convert_regex(value: Union[str, RegexNode]):
 
     annotated_tree, followpos = annotate_tree(node)
 
-    return generate_automaton(annotated_tree, followpos)
+    dfa_tuple = generate_automaton(annotated_tree, followpos)
+
+    return serialize(dfa_tuple)
+
+
+if __name__ == "__main__":
+    entrada = input()
+    saida = convert_regex(entrada)
+    print(saida)
