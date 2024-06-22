@@ -1,4 +1,20 @@
 
+"""
+First(B) = {f,n,t,(};
+First(V) = {a,&};
+First(A) = {f,n,t,(};
+First(Z) = {o,&};
+First(S) = {f,n,t,(};
+
+Follow(S) = {$,)};
+Follow(Z) = {$,)};
+Follow(A) = {o,$,)};
+Follow(V) = {o,$,)};
+Follow(B) = {a,o,$,)};
+
+S = S or A; S = A; A = A and B; A = B; B = not B; S = (S); S = true; S = false;
+"""
+
 from dataclasses import dataclass
 import re
 from typing import Any, Dict, FrozenSet, Iterable, Set, Tuple
@@ -21,16 +37,19 @@ class Grammar:
             sequences.add(body)
 
     @property
-    def nonterminals(self) -> FrozenSet[str]:
-        symbols = set()
+    def nonterminals(self) -> Tuple[str]:
+        symbols = []
+        
+        symbols.extend(head for head in self.rule_map.keys() if head not in symbols)
 
-        for head, sequences in self.rule_map.items():
-            symbols.add(head)
+        for sequences in self.rule_map.values():
             for sequence in sequences:
-                symbols.update(s for s in sequence if not is_terminal(s))
+                for s in sequence:
+                    if not is_terminal(s) and s not in symbols:
+                        symbols.append(s)
 
-        return frozenset(symbols)
-    
+        return tuple(symbols)
+
     @property
     def rules(self) -> Iterable[Tuple[str, str]]:
         for head, body in self.rule_map.items():
@@ -40,7 +59,7 @@ class Grammar:
     def get_body(self, non_terminal: str) -> Tuple[str, ...]:
         return tuple(self.rule_map.get(non_terminal, ()))
     
-    def get_first(self, sequence: str) -> FrozenSet[str]:
+    def get_first(self, sequence: str, search_stack: Tuple[str, ...] = ()) -> FrozenSet[str]:
         first_set = set()
 
         for symbol in sequence:
@@ -48,7 +67,10 @@ class Grammar:
                 symbol_first_set = {symbol,}
             else:
                 bodies = self.get_body(symbol)
-                first_of_bodies = [self.get_first(body) for body in bodies]
+                first_of_bodies = [
+                    self.get_first(body, (body[0], *search_stack))
+                    for body in bodies if body[0] not in search_stack
+                ]
                 symbol_first_set = set(s for first in first_of_bodies for s in first)
 
             first_set.update(symbol_first_set)
@@ -92,7 +114,7 @@ def format_set(value: Set[Any]) -> str:
     alpha = sorted(el for el in value if str(el).isalpha())
 
     ordered = alpha + list(value - set(alpha))
-    return "{" + ",".join(str(el) for el in ordered) + "}"
+    return "{" + ", ".join(str(el) for el in ordered) + "}"
 
 if __name__ == "__main__":
     grammar_str = input()
@@ -103,8 +125,3 @@ if __name__ == "__main__":
         *(f"Follow({symbol}) = {format_set(grammar.get_follow(symbol))}" for symbol in grammar.nonterminals),
     ])
     print(saida)
-
-# P = KVC; K = cK; K = &; V = vV; V = F; F = fPiF; F = &; C = bVCe; C = miC; C = &;
-# First(P) = {b, c, f, m, v, &}; First(K) = {c, &}; First(V) = {f, v, &}; First(F) = {f, &}; First(C) = {b, m, &}; Follow(P) = {$, i}; Follow(K) = {b, f, i, m, v, $}; Follow(V) = {b, e, i, m, $}; Follow(F) = {b, e, i, m, $}; Follow(C) = {e, i, $};
-# P = KL; P = bKLe; K = cK; K = TV; T = tT; T = &; V = vV; V = &; L = mL; L = &;
-# First(P) = {b, c, m, t, v, &}; First(K) = {c, t, v, &}; First(T) = {t, &}; First(V) = {v, &}; First(L) = {m, &}; Follow(P) = {$}; Follow(K) = {e, m, $}; Follow(T) = {e, m, v, $};  Follow(V) = {e, m, $}; Follow(L) = {e, $};
